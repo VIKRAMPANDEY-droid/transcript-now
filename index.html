@@ -630,6 +630,46 @@
 
   <!-- INPUT CARD -->
   <div class="input-card">
+
+    <!-- API KEY SETUP BANNER -->
+    <div id="apiSetupBanner" style="
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;
+      display: flex; flex-direction: column; gap: 10px;
+    ">
+      <div style="display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:600; color:#f59e0b;">
+        🔑 Setup Required — Free API Key
+      </div>
+      <div style="font-size:0.78rem; color:var(--text2); line-height:1.5;">
+        For best results, get a <b style="color:var(--text)">free API key</b> from 
+        <a href="https://supadata.ai" target="_blank" style="color:var(--accent2)">supadata.ai</a> 
+        (100 requests/month, no credit card). Then paste below:
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="apiKeyInput" placeholder="Paste your API key here..." style="
+          flex:1; background:var(--bg); border:1px solid var(--border);
+          border-radius:8px; padding:9px 12px; color:var(--text);
+          font-size:0.82rem; outline:none; font-family:'DM Sans',sans-serif;
+        ">
+        <button onclick="saveApiKey()" style="
+          background:var(--accent); color:white; border:none;
+          border-radius:8px; padding:9px 16px; cursor:pointer;
+          font-size:0.82rem; font-weight:600; white-space:nowrap;
+          font-family:'DM Sans',sans-serif;
+        ">Save</button>
+      </div>
+    </div>
+
+    <div id="apiKeyStatus" style="display:none; margin-bottom:14px; padding:10px 14px;
+      background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3);
+      border-radius:10px; font-size:0.82rem; color:#10b981;
+      display:none; align-items:center; gap:8px;">
+      ✅ <span>API key saved! You're all set.</span>
+      <button onclick="resetApiKey()" style="margin-left:auto; background:transparent;
+        border:1px solid rgba(16,185,129,0.4); color:#10b981; border-radius:6px;
+        padding:3px 10px; cursor:pointer; font-size:0.75rem;">Change</button>
+    </div>
+
     <div class="input-label" id="input-label">PASTE YOUTUBE LINK BELOW</div>
     <div class="input-wrap">
       <input type="url" id="urlInput" 
@@ -1085,6 +1125,40 @@ function extractVideoId(url) {
 }
 
 // ============================================================
+// API KEY MANAGEMENT
+// ============================================================
+let supadataKey = localStorage.getItem('supa_key') || '';
+
+function initApiKeyUI() {
+  if (supadataKey) {
+    document.getElementById('apiSetupBanner').style.display = 'none';
+    const status = document.getElementById('apiKeyStatus');
+    status.style.display = 'flex';
+    document.getElementById('apiKeyInput').value = supadataKey;
+  }
+}
+
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) return;
+  supadataKey = key;
+  localStorage.setItem('supa_key', key);
+  document.getElementById('apiSetupBanner').style.display = 'none';
+  const status = document.getElementById('apiKeyStatus');
+  status.style.display = 'flex';
+  showToast('✅ API key saved!');
+}
+
+function resetApiKey() {
+  document.getElementById('apiKeyStatus').style.display = 'none';
+  document.getElementById('apiSetupBanner').style.display = 'flex';
+  document.getElementById('apiKeyInput').value = supadataKey;
+}
+
+// Init on load
+window.addEventListener('load', initApiKeyUI);
+
+// ============================================================
 // SAFE FETCH — no AbortSignal (mobile compatible)
 // ============================================================
 function safeFetch(url, options) {
@@ -1101,6 +1175,27 @@ function safeFetch(url, options) {
 // ============================================================
 async function fetchTranscript(videoId) {
   const fullUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // ─── METHOD 0: Supadata API (PRIMARY — most reliable) ───
+  if (supadataKey) {
+    try {
+      const res = await safeFetch(
+        `https://api.supadata.ai/v1/youtube/transcript?videoId=${videoId}`,
+        { headers: { 'x-api-key': supadataKey } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.content && data.content.length > 0) {
+          // Store title if available
+          if (data.title) window._videoTitle = data.title;
+          return data.content.map(item => ({
+            start: (item.offset || 0) / 1000,
+            text: (item.text || '').trim()
+          })).filter(i => i.text);
+        }
+      }
+    } catch(e) { console.log('Supadata fail'); }
+  }
 
   // ─── METHOD 1: Tactiq direct API (works without proxy) ───
   try {
